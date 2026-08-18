@@ -6,10 +6,18 @@ user configuration** (`~/.dsh`) and **never discarding your own commits**.
 
 - **Settings page ("Updates")** — source / running / latest version, outdated
   badge, branch + working-tree guards, check button, update buttons, live
-  operation log, and an update confirmation dialog.
+  operation log, and an update confirmation dialog with a **dry-run preview**
+  (from→to versions plus the exact commits that would be added and the local
+  commits that would be kept).
 - **Sidebar footer badge** — a compact version pill (green = up to date,
   amber = update available, red = check error); click to refresh.
-- Host HTTP surface `GET /__dsh-update/status|info`, `POST /__dsh-update/check|update`.
+- **Auto-check + toast** — when the cached version check is stale (12h) the
+  page auto re-checks; a newly-detected update raises a transient toast.
+- **Honest diagnostics** — a failed npm lookup is a real "version check
+  failed"; a failed upstream `git fetch` is only a soft note (versions are
+  still detected from npm + local tags).
+- Host HTTP surface `GET /__dsh-update/status|info`,
+  `POST /__dsh-update/check|preview|update`.
 
 ## How it works
 
