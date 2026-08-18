@@ -1,0 +1,48 @@
+.badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 28px;
+  padding: 0 10px;
+  border: 1px solid var(--dsw-alias-border-l2);
+  border-radius: 999px;
+  background: transparent;
+  font: inherit;
+  font-size: 11.5px;
+  color: var(--dsw-alias-label-secondary);
+  cursor: pointer;
+  transition: background .16s, color .16s, border-color .16s;
+}
+
+.badge:hover {
+  background: var(--dsw-alias-interactive-bg-hover);
+  color: var(--dsw-alias-label-primary);
+}
+
+.dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
+.dotOk {
+  background: var(--dsw-alias-state-success-primary, #3fb950);
+}
+
+.dotOutdated {
+  background: var(--dsw-alias-state-warning-primary, #d29922);
+}
+
+.dotError {
+  background: var(--dsw-alias-state-error-primary);
+}
+
+.dotUnknown {
+  background: var(--dsw-alias-label-dimmed);
+}
+
+.label {
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}

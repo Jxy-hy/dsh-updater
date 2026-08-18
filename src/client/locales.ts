@@ -1,0 +1,155 @@
+/**
+ * `settings.dshUpdater` dictionary: the dsh-updater Settings page and the
+ * sidebar version badge (the zh set is the key source of truth).
+ */
+
+/** Simplified Chinese dictionary (key-set source of truth). */
+export const zh = {
+  'nav': '更新',
+  'title': '更新',
+  'intro': '检查本地 DeepSeek Harness 是否过时，并在不触碰用户配置（~/.dsh）的前提下更新到官方最新版。更新只改动安装目录（git 检出）的源码；依赖重装与重启由你决定。',
+  'statusLoading': '正在读取版本信息…',
+  'checking': '正在检查更新…',
+  'currentVersion': '当前源码版本',
+  'runningVersion': '运行中版本',
+  'latestVersion': '官方最新',
+  'unknown': '未知',
+  'outdated': '有可用更新',
+  'upToDate': '已是最新',
+  'needsRestart': '源码与运行版本不一致——重启 dsh web 后新版本才会生效',
+  'restartHint': '重启 dsh web 后新版本才会生效',
+  'branch': '分支',
+  'treeClean': '工作区干净',
+  'dirtyTree': '工作区有未提交改动：{files}',
+  'untracked': '另有未跟踪文件：{files}',
+  'checkFailed': '版本检查失败：{error}',
+  'neverChecked': '尚未检查过',
+  'updatedAt': '上次检查：{time}',
+  'checkNow': '检查更新',
+  'checkingNow': '正在检查…',
+  'update': '更新到最新',
+  'updateWithInstall': '更新并重装依赖',
+  'updating': '正在更新…',
+  'confirmTitle': '更新 DeepSeek Harness',
+  'confirmBody': '将把本地安装更新到官方最新。更新只改动安装目录（{path}）的源码，不会触碰用户配置（~/.dsh），并会保留你的 local-patches 补丁。若工作区有未提交改动将拒绝执行。确定继续？',
+  'confirmWithInstallBody': '更新后还会运行 pnpm install --frozen-lockfile 重装依赖（耗时较长）。确定继续？',
+  'fetchNote': '无法连接 GitHub（{error}）——仅影响上游引用刷新，版本判断不受影响',
+  'dirtyTreeHint': '工作区有未提交改动，更新会被拒绝——请先提交或暂存（推荐提交到 local-patches 分支）。',
+  'previewing': '正在计算更新预览…',
+  'previewTitle': '更新预览',
+  'previewFromTo': '{from} → {to}',
+  'previewUpToDate': '已经是最新版本，无需更新',
+  'previewNewCommits': '将新增 {n} 个官方提交：',
+  'previewLocalCommits': '将保留你的 {n} 个本地提交：',
+  'previewDirty': '警告：工作区有未提交改动，更新会被拒绝',
+  'previewBlocked': '无法更新：{message}',
+  'toastOutdated': '有可用更新：v{version}',
+  'cancel': '取消',
+  'close': '关闭',
+  'updateFailed': '更新失败：{error}',
+  'updateConflict': '更新遇到冲突，已停在此处等待解决——不会自动丢弃任何文件。',
+  'conflictFiles': '冲突文件：{files}',
+  'updateOk': '已更新 {from} → {to}',
+  'updateUpToDate': '已经是最新版本，无需更新',
+  'updateLog': '更新日志',
+  'noLog': '（无日志）',
+  'installNotResolved': '无法定位安装目录——请在插件配置中设置 installPath',
+  'installNotRepo': '安装目录不是 git 仓库',
+  'wrongBranch': '当前分支不是 {branch}——更新只在 local-patches 分支上执行',
+  'noUpstream': '缺少 upstream 远程（官方仓库）',
+  'footerNote': '更新会保留你的 local-patches 补丁与所有 ~/.dsh 用户配置',
+  'badgeTitle': 'DeepSeek Harness {version}',
+  'badgeUpToDate': '已是最新',
+  'badgeUpdateAvailable': '有可用更新',
+  'badgeError': '版本检查出错',
+  'badgeUnknown': '版本未知',
+  'badgeHint': '前往 设置 → 更新 查看更多',
+  'goSettings': '前往设置',
+} satisfies Record<string, string>
+
+/** English dictionary, checked complete against the zh key set. */
+export const en = {
+  'nav': 'Updates',
+  'title': 'Updates',
+  'intro': 'Check whether the local DeepSeek Harness is outdated and update it to the official latest without touching user configuration (~/.dsh). Updates only change the installation checkout (git) sources; dependency reinstall and restart are up to you.',
+  'statusLoading': 'Reading version info…',
+  'checking': 'Checking for updates…',
+  'currentVersion': 'Source version',
+  'runningVersion': 'Running version',
+  'latestVersion': 'Official latest',
+  'unknown': 'Unknown',
+  'outdated': 'Update available',
+  'upToDate': 'Up to date',
+  'needsRestart': 'Source and running version differ — restart dsh web to activate the new version',
+  'restartHint': 'Restart dsh web for the new version to take effect',
+  'branch': 'Branch',
+  'treeClean': 'Working tree clean',
+  'dirtyTree': 'Working tree has uncommitted changes: {files}',
+  'untracked': 'Plus untracked files: {files}',
+  'checkFailed': 'Version check failed: {error}',
+  'neverChecked': 'Not checked yet',
+  'updatedAt': 'Last checked: {time}',
+  'checkNow': 'Check for updates',
+  'checkingNow': 'Checking…',
+  'update': 'Update to latest',
+  'updateWithInstall': 'Update & reinstall deps',
+  'updating': 'Updating…',
+  'confirmTitle': 'Update DeepSeek Harness',
+  'confirmBody': 'This updates the local installation to the official latest. Only the installation checkout ({path}) sources change; user configuration (~/.dsh) is never touched and your local-patches commits are preserved. The update is refused if the working tree is dirty. Continue?',
+  'confirmWithInstallBody': 'It will also run pnpm install --frozen-lockfile to reinstall dependencies (can take a while). Continue?',
+  'fetchNote': 'Cannot reach GitHub ({error}) — only the upstream-refresh step failed; version detection is unaffected',
+  'dirtyTreeHint': 'The working tree has uncommitted changes, so the update would be refused — commit or stash them first (recommended: commit to the local-patches branch).',
+  'previewing': 'Computing update preview…',
+  'previewTitle': 'Update preview',
+  'previewFromTo': '{from} → {to}',
+  'previewUpToDate': 'Already up to date',
+  'previewNewCommits': 'Will add {n} upstream commit(s):',
+  'previewLocalCommits': 'Will keep your {n} local commit(s):',
+  'previewDirty': 'Warning: the working tree has uncommitted changes; the update would be refused',
+  'previewBlocked': 'Cannot update: {message}',
+  'toastOutdated': 'Update available: v{version}',
+  'cancel': 'Cancel',
+  'close': 'Close',
+  'updateFailed': 'Update failed: {error}',
+  'updateConflict': 'The update stopped on conflicts and is waiting for you — nothing is discarded automatically.',
+  'conflictFiles': 'Conflicted files: {files}',
+  'updateOk': 'Updated {from} → {to}',
+  'updateUpToDate': 'Already up to date',
+  'updateLog': 'Update log',
+  'noLog': '(no log)',
+  'installNotResolved': 'Cannot locate the installation — set installPath in the plugin config',
+  'installNotRepo': 'The installation path is not a git repository',
+  'wrongBranch': 'Current branch is not {branch} — updates only run on the local-patches branch',
+  'noUpstream': 'Missing the upstream remote (the official repo)',
+  'footerNote': 'Updates preserve your local-patches commits and all ~/.dsh user configuration',
+  'badgeTitle': 'DeepSeek Harness {version}',
+  'badgeUpToDate': 'Up to date',
+  'badgeUpdateAvailable': 'Update available',
+  'badgeError': 'Version check failed',
+  'badgeUnknown': 'Version unknown',
+  'badgeHint': 'See 设置 → Updates for details',
+  'goSettings': 'Open settings',
+} satisfies Record<string, string>
+
+export type UpdaterKey = keyof typeof zh
+
+/**
+ * Whether the active UI language is Chinese. The plugin carries its own
+ * tiny resolver instead of the locale service: the built locale types only
+ * know the namespaces registered at compile time, so a plugin namespace
+ * would fight the constraint system for no benefit.
+ */
+export function isZh(): boolean {
+  return typeof navigator !== 'undefined' && navigator.language.toLowerCase().startsWith('zh')
+}
+
+/** Resolve one key in the active dictionary, with `{name}` interpolation. */
+export function t(key: UpdaterKey, params?: Record<string, unknown>): string {
+  const dict = isZh() ? zh : en
+  let template = dict[key] ?? key
+  if (params !== undefined) {
+    template = template.replace(/\{(\w+)\}/g, (match, name: string) =>
+      name in params ? String(params[name]) : match)
+  }
+  return template
+}
