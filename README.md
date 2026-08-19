@@ -13,11 +13,16 @@ user configuration** (`~/.dsh`) and **never discarding your own commits**.
   amber = update available, red = check error); click to refresh.
 - **Auto-check + toast** — when the cached version check is stale (12h) the
   page auto re-checks; a newly-detected update raises a transient toast.
+- **One-click commit & push to your fork** — when the working tree has
+  uncommitted changes the button enables: it stages everything, commits on the
+  current branch (`local: working tree sync (dsh-updater …)`), and pushes to
+  `origin` (your fork). A commit that fails to push is reported as `partial` —
+  your work is committed locally, only the network hop failed.
 - **Honest diagnostics** — a failed npm lookup is a real "version check
   failed"; a failed upstream `git fetch` is only a soft note (versions are
   still detected from npm + local tags).
 - Host HTTP surface `GET /__dsh-update/status|info`,
-  `POST /__dsh-update/check|preview|update`.
+  `POST /__dsh-update/check|preview|update|commit-push`.
 
 ## How it works
 
