@@ -215,6 +215,8 @@ interface StatusData {
   /** Soft note when the version check succeeded but the upstream git fetch failed. */
   fetchNote?: string | null
   lastUpdateResult?: OperationResult | null
+  /** Result of the last one-click commit+push (working-tree sync to the fork). */
+  lastCommitPushResult?: OperationResult | null
   operation?: Operation | null
 }
 
@@ -240,6 +242,12 @@ interface OperationResult {
   conflictedFiles?: string[]
   message?: string
   install?: { code: number | null; ok: boolean }
+  /** Commit+push specifics. */
+  branch?: string
+  /** Committed locally but the push to the fork failed. */
+  partial?: boolean
+  /** Number of working-tree changes staged/committed. */
+  committedFiles?: number
 }
 
 /** The parts of `git describe` we surface. */
@@ -332,6 +340,8 @@ async function collectStatus(env: Env): Promise<StatusData> {
   base.lastCheckedAt = env.lastCheckedAt
   base.checkError = env.checkError
   base.fetchNote = env.fetchNote
+  base.lastUpdateResult = env.lastUpdateResult
+  base.lastCommitPushResult = env.lastCommitPushResult
   base.operation = env.operation
   base.lastUpdateResult = env.lastUpdateResult
   return base
@@ -466,6 +476,7 @@ interface Env {
   checkError: string | null
   fetchNote: string | null
   lastUpdateResult: OperationResult | null
+  lastCommitPushResult: OperationResult | null
   operation: Operation | null
 }
 
@@ -638,6 +649,98 @@ async function runUpdate(env: Env, withInstall: boolean): Promise<OperationResul
   return done
 }
 
+/**
+ * One-click working-tree sync: stage everything, commit on the current
+ * branch, then push to `origin` (the user's fork). Refuses when the tree is
+ * clean (the UI only enables the button then anyway). Bypasses git hooks
+ * (`--no-verify`) so a WIP backup is fast and never blocked by lint/
+ * typecheck gates. A commit that fails to push is reported as `partial` —
+ * your work is committed locally, only the network hop failed.
+ */
+async function runCommitPush(env: Env): Promise<OperationResult> {
+  const { install } = env
+  const path = install.path
+  const result: OperationResult = { ok: false }
+  // Finalize the shared operation + remember the result for /status.
+  const finish = (res: OperationResult): OperationResult => {
+    if (env.operation !== null) {
+      env.operation.running = false
+      env.operation.finishedAt = Date.now()
+      env.operation.result = res
+    }
+    env.lastCommitPushResult = res
+    return res
+  }
+  if (!install.resolved || path === undefined) {
+    return finish({ ok: false, message: 'installPath not resolved — set the dsh-updater installPath config' })
+  }
+  env.operation = { running: true, step: 'preflight', log: [], startedAt: Date.now() }
+  logLine(env, `preflight: ${path}`)
+
+  let branch: string
+  try {
+    branch = await execGit(path, ['rev-parse', '--abbrev-ref', 'HEAD'])
+  } catch {
+    return finish({ ok: false, message: 'not a git repository' })
+  }
+  result.branch = branch
+  let porcelain: string
+  try {
+    porcelain = await execGit(path, ['status', '--porcelain'])
+  } catch {
+    return finish({ ok: false, message: 'cannot read working-tree state' })
+  }
+  const changes = porcelain.split('\n').filter(line => line.length > 0)
+  if (changes.length === 0) {
+    return finish({ ok: false, branch, message: 'working tree is clean — nothing to commit or push' })
+  }
+  result.committedFiles = changes.length
+
+  // 1) Stage + commit everything.
+  env.operation.step = 'git add'
+  logLine(env, `$ git add -A  (${changes.length} change(s))`)
+  const addCode = await execGitLogged(env, path, ['add', '-A'], 30_000).catch(() => 1)
+  if (addCode !== 0) {
+    return finish({ ok: false, branch, committedFiles: changes.length, message: `git add failed (code ${addCode})` })
+  }
+  env.operation.step = 'git commit'
+  const stamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19)
+  const message = `local: working tree sync (dsh-updater ${stamp})`
+  logLine(env, `$ git commit --no-verify -m "${message}"`)
+  const commitCode = await execGitLogged(env, path, ['commit', '--no-verify', '-m', message], 60_000).catch(() => 1)
+  if (commitCode !== 0) {
+    return finish({ ok: false, branch, committedFiles: changes.length, message: `git commit failed (code ${commitCode})` })
+  }
+  let headAfter = '?'
+  try {
+    headAfter = (await execGit(path, ['rev-parse', '--short', 'HEAD'])).slice(0, 12)
+  } catch { /* keep '?' */ }
+  result.to = headAfter
+  logLine(env, `committed ${changes.length} change(s) → ${headAfter} on ${branch}`)
+
+  // 2) Push to the fork (origin).
+  env.operation.step = 'git push'
+  logLine(env, `$ git push --no-verify origin ${branch}`)
+  const pushCode = await execGitLogged(env, path, ['push', '--no-verify', 'origin', branch], 180_000).catch(() => 1)
+  if (pushCode !== 0) {
+    return finish({
+      ok: false,
+      partial: true,
+      branch,
+      to: headAfter,
+      committedFiles: changes.length,
+      message: `committed locally (${headAfter}), but push to origin/${branch} failed (code ${pushCode}) — retry the button or run 'git push'`,
+    })
+  }
+  return finish({
+    ok: true,
+    branch,
+    to: headAfter,
+    committedFiles: changes.length,
+    message: `committed ${changes.length} change(s) and pushed to origin/${branch} (${headAfter})`,
+  })
+}
+
 /** Run a git command streaming output lines into the operation log. */
 function execGitLogged(env: Env, path: string, args: string[], timeoutMs: number): Promise<number> {
   return new Promise((resolve) => {
@@ -743,6 +846,7 @@ export function apply(ctx: Context, config: Config): void {
     checkError: null,
     fetchNote: null,
     lastUpdateResult: null,
+    lastCommitPushResult: null,
     operation: null,
   }
   const gate = makeGate()
@@ -754,7 +858,7 @@ export function apply(ctx: Context, config: Config): void {
       const method = req.method ?? 'GET'
 
       if (method === 'GET' && path === ROUTE_PREFIX) {
-        sendJson(res, 200, { ok: true, name, operations: ['status', 'check', 'preview', 'update'] })
+        sendJson(res, 200, { ok: true, name, operations: ['status', 'check', 'preview', 'update', 'commit-push'] })
         return
       }
       if (method === 'GET' && path === `${ROUTE_PREFIX}/status`) {
@@ -836,6 +940,33 @@ export function apply(ctx: Context, config: Config): void {
             env.operation.running = false
             env.operation.finishedAt = Date.now()
             env.operation.result = failure
+          })
+          .finally(() => { gate.release() })
+        return
+      }
+      if (method === 'POST' && path === `${ROUTE_PREFIX}/commit-push`) {
+        // One-click working-tree sync to the fork: stage + commit + push.
+        // The button is only enabled when /status reports a non-clean tree.
+        if (env.operation?.running === true) {
+          sendJson(res, 409, { ok: false, error: 'busy', message: 'an operation is already running' })
+          return
+        }
+        if (!gate.tryAcquire()) {
+          sendJson(res, 409, { ok: false, error: 'busy' })
+          return
+        }
+        env.operation = { running: true, step: 'starting', log: [], startedAt: Date.now() }
+        sendJson(res, 200, { ok: true, started: true })
+        void runCommitPush(env)
+          .catch((error: unknown) => {
+            ctx.logger.warn(`dsh-updater: ${String(error)}`)
+            const failure: OperationResult = { ok: false, message: String(error) }
+            env.lastCommitPushResult = failure
+            if (env.operation !== null) {
+              env.operation.running = false
+              env.operation.finishedAt = Date.now()
+              env.operation.result = failure
+            }
           })
           .finally(() => { gate.release() })
         return

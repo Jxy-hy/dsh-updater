@@ -35,6 +35,10 @@ export interface UpdateSectionInjected {
   runUpdate: () => Promise<void>
   /** Dismiss the auto-check toast. */
   dismissToast: () => void
+  /** Open or close the one-click commit+push confirm dialog. */
+  confirmCommitPush: (open: boolean) => void
+  /** Run the confirmed commit+push (polls the host until it settles). */
+  runCommitPush: () => Promise<void>
 }
 
 /** Full component props. */
@@ -55,7 +59,7 @@ function versionText(value: string | null | undefined): string {
 
 /** Render the Update section content column. */
 export function UpdateSection(props: UpdateSectionProps): ReactNode {
-  const { useVersion, load, check, confirmUpdate, runUpdate, dismissToast } = props
+  const { useVersion, load, check, confirmUpdate, runUpdate, dismissToast, confirmCommitPush, runCommitPush } = props
   const state = useVersion(snapshot => snapshot)
 
   useEffect(() => {
@@ -68,6 +72,8 @@ export function UpdateSection(props: UpdateSectionProps): ReactNode {
   const unknownVersions = v?.unknownVersions ?? false
   const dirty = (v?.dirty ?? []).concat(v?.untracked ?? [])
   const onExpectedBranch = v?.branch === v?.expectedBranch
+  // "Inconsistency detected" = the working tree differs from HEAD.
+  const hasChanges = v?.treeClean === false
   const canUpdate = resolved
     && onExpectedBranch
     && dirty.length === 0
@@ -168,6 +174,11 @@ export function UpdateSection(props: UpdateSectionProps): ReactNode {
 
       {state.updateResult !== null && <UpdateResultNotice result={state.updateResult} />}
 
+      {state.commitPushError !== null && (
+        <p className={css.error} role="alert">{t('commitPushFailed', { error: state.commitPushError })}</p>
+      )}
+      {state.commitPushResult !== null && <CommitPushResultNotice result={state.commitPushResult} />}
+
       <div className={css.actions}>
         <Tooltip label={t('checkNow')} side="top" delayMs={400}>
           <Button
@@ -197,6 +208,15 @@ export function UpdateSection(props: UpdateSectionProps): ReactNode {
             {state.previewing ? t('previewing') : t('updateWithInstall')}
           </Button>
         </Tooltip>
+        <Tooltip label={t('commitPush')} side="top" delayMs={400}>
+          <Button
+            variant="outline"
+            disabled={!hasChanges || state.committing}
+            onClick={() => { confirmCommitPush(true) }}
+          >
+            {state.committing ? t('committing') : t('commitPush')}
+          </Button>
+        </Tooltip>
       </div>
 
       {!resolved && v !== null && (
@@ -214,6 +234,12 @@ export function UpdateSection(props: UpdateSectionProps): ReactNode {
         state={state}
         onCancel={() => { confirmUpdate(null) }}
         onConfirm={() => { void runUpdate() }}
+      />
+
+      <CommitPushConfirmDialog
+        state={state}
+        onCancel={() => { confirmCommitPush(false) }}
+        onConfirm={() => { void runCommitPush() }}
       />
 
       {state.toast !== null && (
@@ -340,4 +366,59 @@ function UpdateResultNotice({ result }: { result: OperationResult }): ReactNode 
     )
   }
   return <p className={css.error} role="alert">{t('updateFailed', { error: result.message ?? '' })}</p>
+}
+
+/** One-click commit+push confirm dialog: lists what will be committed. */
+function CommitPushConfirmDialog({
+  state, onCancel, onConfirm,
+}: {
+  state: UpdateState
+  onCancel: () => void
+  onConfirm: () => void
+}): ReactNode {
+  const version = state.version
+  const files = (version?.dirty ?? []).concat(version?.untracked ?? [])
+  return (
+    <Modal
+      open={state.pendingCommitPush}
+      onClose={onCancel}
+      title={t('commitPushTitle')}
+      closeLabel={t('close')}
+      description={t('commitPushBody', { branch: version?.branch ?? '' })}
+      className={css.confirmDialog as string}
+      footer={(
+        <>
+          <Button variant="outline" autoFocus disabled={state.committing} onClick={onCancel}>
+            {t('cancel')}
+          </Button>
+          <Button variant="primary" disabled={state.committing} onClick={onConfirm}>
+            {state.committing ? t('committing') : t('commitPushConfirm')}
+          </Button>
+        </>
+      )}
+    >
+      {files.length > 0 && (
+        <ul className={css.fileList}>
+          {files.slice(0, 12).map(file => <li key={file}><code className={css.code}>{file}</code></li>)}
+          {files.length > 12 && <li><code className={css.code}>… +{files.length - 12}</code></li>}
+        </ul>
+      )}
+      <p className={css.footerNote}>{t('commitPushNote')}</p>
+    </Modal>
+  )
+}
+
+/** One-line notice for a finished commit+push. */
+function CommitPushResultNotice({ result }: { result: OperationResult }): ReactNode {
+  if (result.ok) {
+    return <p className={css.ok} role="status">{result.message ?? t('commitPushOk')}</p>
+  }
+  if (result.partial === true) {
+    return (
+      <div className={css.warningBlock} role="alert">
+        <p className={css.warningText}>{result.message ?? t('commitPushPartial')}</p>
+      </div>
+    )
+  }
+  return <p className={css.error} role="alert">{result.message ?? t('commitPushFailed', { error: '' })}</p>
 }

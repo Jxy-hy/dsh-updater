@@ -36,6 +36,7 @@ export interface VersionStatus {
   checkError?: string | null
   fetchNote?: string | null
   lastUpdateResult?: OperationResult | null
+  lastCommitPushResult?: OperationResult | null
   operation?: OperationWire | null
 }
 
@@ -61,6 +62,12 @@ export interface OperationResult {
   versionAfter?: string | null
   message?: string
   install?: { code: number | null; ok: boolean }
+  /** Commit+push specifics. */
+  branch?: string
+  /** Committed locally but the push to the fork failed. */
+  partial?: boolean
+  /** Number of working-tree changes staged/committed. */
+  committedFiles?: number
 }
 
 /** Wire shape of the host `/preview` response (dry-run). */
@@ -114,6 +121,14 @@ export interface UpdateState {
   updateLog: string[]
   /** A transient toast to show (auto-check found an update), or null. */
   toast: string | null
+  /** Whether the one-click commit+push is in flight. */
+  committing: boolean
+  /** Whether the commit+push confirm dialog is open. */
+  pendingCommitPush: boolean
+  /** The last commit+push failure. */
+  commitPushError: string | null
+  /** The last finished commit+push result (from the host). */
+  commitPushResult: OperationResult | null
 }
 
 const INITIAL: UpdateState = {
@@ -129,6 +144,10 @@ const INITIAL: UpdateState = {
   updateResult: null,
   updateLog: [],
   toast: null,
+  committing: false,
+  pendingCommitPush: false,
+  commitPushError: null,
+  commitPushResult: null,
 }
 
 const ROUTE = '/__dsh-update'
@@ -280,6 +299,45 @@ export class UpdatesController {
       this.patch({
         updating: false,
         updateError: error instanceof Error ? error.message : String(error),
+      })
+    } finally {
+      await this.load()
+    }
+  }
+
+  /** Open or close the one-click commit+push confirm dialog. */
+  confirmCommitPush(open: boolean): void {
+    this.patch({ pendingCommitPush: open, commitPushError: null })
+  }
+
+  /**
+   * Run the one-click working-tree sync (stage + commit + push to the fork).
+   * Same fire-and-forget + poll pattern as the update; the result lands in
+   * `lastCommitPushResult`.
+   */
+  async runCommitPush(): Promise<void> {
+    const snapshot = this.hooks.getSnapshot()
+    if (!snapshot.pendingCommitPush || snapshot.committing) return
+    this.patch({ committing: true, pendingCommitPush: false, commitPushError: null, commitPushResult: null })
+    try {
+      const started = await this.fetchHost<{ ok: boolean; started?: boolean; error?: string }>(
+        `${ROUTE}/commit-push`)
+      if (!started.ok) throw new Error(started.error ?? 'commit+push not started')
+      for (;;) {
+        await new Promise(resolve => setTimeout(resolve, 1200))
+        const status = await this.fetchHost<VersionStatus>(`${ROUTE}/status`)
+        if (!status.operation?.running) {
+          this.patch({
+            committing: false,
+            commitPushResult: status.lastCommitPushResult ?? null,
+          })
+          break
+        }
+      }
+    } catch (error) {
+      this.patch({
+        committing: false,
+        commitPushError: error instanceof Error ? error.message : String(error),
       })
     } finally {
       await this.load()

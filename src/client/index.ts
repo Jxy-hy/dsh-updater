@@ -41,6 +41,8 @@ export function apply(ctx: ClientContext): void {
     confirmUpdate: (withInstall: boolean | null) => { controller.confirmUpdate(withInstall) },
     runUpdate: () => controller.runUpdate(),
     dismissToast: () => { controller.dismissToast() },
+    confirmCommitPush: (open: boolean) => { controller.confirmCommitPush(open) },
+    runCommitPush: () => controller.runCommitPush(),
   })
 
   ctx.slots.inject('settings.section', () => ctx.slots.register({
