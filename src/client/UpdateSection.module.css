@@ -81,6 +81,21 @@
   border-radius: 999px;
 }
 
+/* Unverified: upstream ref known with no new commits, but the last fetch
+   failed (or never succeeded this session) — never show a green "up to
+   date" on unverified data. */
+.badgeWarn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--dsw-alias-state-warning-primary, #d29922);
+  padding: 2px 10px;
+  border: 1px solid currentColor;
+  border-radius: 999px;
+}
+
 .restartHint {
   margin: 0;
   font-size: 12.5px;
@@ -234,6 +249,14 @@
   margin: 0;
   font-size: 13px;
   line-height: 1.5;
+}
+
+.previewWarn {
+  margin: 0;
+  font-size: 12.5px;
+  line-height: 1.5;
+  color: var(--dsw-alias-state-warning-primary, #d29922);
+  overflow-wrap: anywhere;
 }
 
 .commitGroup {

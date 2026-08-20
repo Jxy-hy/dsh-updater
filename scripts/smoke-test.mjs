@@ -123,7 +123,9 @@ async function main() {
   console.log('  status sample:', JSON.stringify({
     branch: r.json.branch, head: r.json.head, describe: r.json.describe,
     sourceVersion: r.json.sourceVersion, runningVersion: r.json.runningVersion,
-    latestVersion: r.json.latestVersion, outdated: r.json.outdated,
+    latestVersion: r.json.latestVersion, npmVersion: r.json.npmVersion,
+    upstreamVersion: r.json.upstreamVersion, upstreamAhead: r.json.upstreamAhead,
+    upstreamFresh: r.json.upstreamFresh, outdated: r.json.outdated,
     upToDate: r.json.upToDate, needsRestart: r.json.needsRestart,
     treeClean: r.json.treeClean, dirty: r.json.dirty,
   }))
@@ -131,9 +133,16 @@ async function main() {
   console.log('\n== 2. /check on the REAL install (npm + upstream fetch) ==')
   r = await call(base, '/__dsh-update/check', 'POST', {})
   assert(r.status === 200, `check HTTP 200 (got ${r.status})`)
-  assert(r.json.latestVersion === '0.1.0-rc.7', `latestVersion 0.1.0-rc.7 (got ${r.json.latestVersion})`)
-  assert(r.json.outdated === false, 'not outdated (local == latest)')
-  console.log('  check sample:', JSON.stringify({ latestVersion: r.json.latestVersion, outdated: r.json.outdated, checkError: r.json.checkError, lastCheckedAt: r.json.lastCheckedAt }))
+  // Git-first verdict (regression: the npm registry may legitimately lag
+  // behind the git repo — the verdict must not be npm-primary).
+  assert(typeof r.json.latestVersion === 'string' && r.json.latestVersion.length > 0, `latestVersion from git upstream (got ${r.json.latestVersion})`)
+  assert(Number.isInteger(r.json.upstreamAhead), `upstreamAhead reported (got ${r.json.upstreamAhead})`)
+  assert(r.json.outdated === (r.json.upstreamAhead > 0), `outdated matches upstreamAhead=${r.json.upstreamAhead} (got ${r.json.outdated})`)
+  assert((r.json.upToDate === true) === (r.json.upstreamAhead === 0 && r.json.upstreamFresh === true), `upToDate authoritative only when fresh (got upToDate=${r.json.upToDate} fresh=${r.json.upstreamFresh})`)
+  if (r.json.upstreamAhead > 0 && r.json.npmVersion !== r.json.upstreamVersion) {
+    assert(r.json.latestVersion === r.json.upstreamVersion, 'git upstream beats lagging npm registry')
+  }
+  console.log('  check sample:', JSON.stringify({ latestVersion: r.json.latestVersion, npmVersion: r.json.npmVersion, upstreamVersion: r.json.upstreamVersion, upstreamAhead: r.json.upstreamAhead, upstreamFresh: r.json.upstreamFresh, outdated: r.json.outdated, checkError: r.json.checkError, fetchNote: r.json.fetchNote, lastCheckedAt: r.json.lastCheckedAt }))
 
   console.log('\n== 3. /update on a FAKE install (rc.5 + patch → rebase onto rc.7) ==')
   const upstreamDir = makeUpstreamRepo(['0.1.0-rc.5'])
@@ -175,6 +184,8 @@ async function main() {
   assert(porcelain === '', `fake install tree clean after update (got ${JSON.stringify(porcelain)})`)
   const headAfter = git(fakeInstall, 'rev-parse', 'HEAD')
   assert(headAfter !== patchBefore, 'HEAD moved (patch replayed on new base)')
+  assert(final.json.upstreamAhead === 0, `no new upstream commits after update (got ${final.json.upstreamAhead})`)
+  assert(final.json.outdated === false, 'not outdated after update (git-first verdict)')
   console.log('  update sample:', JSON.stringify(result))
   await fakeBoot.close()
 

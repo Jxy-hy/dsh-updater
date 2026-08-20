@@ -1,6 +1,6 @@
 {
   "name": "dsh-updater",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "DSH web plugin: check the local DeepSeek Harness version against the official latest and update the installation checkout while preserving user configuration (~/.dsh is never touched). Settings page + sidebar version badge.",
   "type": "module",
   "main": "lib/index.js",

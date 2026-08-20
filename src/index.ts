@@ -5,10 +5,13 @@
  * inspect and update the DSH installation checkout:
  *
  * - `GET /status` — local source/running version, the official latest
- *   version (npm registry), whether the local copy is outdated, the branch
- *   and working-tree state, and the in-flight operation (if any).
- * - `POST /check` — force a fresh version check: query the npm registry and
- *   `git fetch` the configured upstream remote (refresh refs + tags).
+ *   version (the tag on the upstream remote tip, with the npm registry as
+ *   fallback), whether the local copy is outdated (new upstream commits),
+ *   the branch and working-tree state, and the in-flight operation (if any).
+ * - `POST /check` — force a fresh version check: `git fetch` the configured
+ *   upstream remote (refresh refs + tags — the authoritative version source)
+ *   and query the npm registry (fallback for installs without an upstream
+ *   ref).
  * - `POST /update` — update the checkout to the official latest: fetch the
  *   upstream remote and rebase the current branch (the `local-patches`
  *   branch carrying the user's own commits) onto it. Conflicts STOP the
@@ -202,8 +205,19 @@ interface StatusData {
   sourceVersion?: string | null
   runningVersion?: string | null
   needsRestart?: boolean
+  /** The official latest: the tag on the upstream/<branch> tip, falling back to the npm registry latest. */
   latestVersion?: string | null
+  /** The npm registry `latest` dist-tag (fallback signal; the git upstream is authoritative). */
+  npmVersion?: string | null
+  /** The tag on the upstream/<branch> tip, read from the local ref (may be stale). */
+  upstreamVersion?: string | null
+  /** Commits in HEAD..upstream/<branch> from the local ref (may be stale). */
+  upstreamAhead?: number | null
+  /** True only when the upstream ref was refreshed by a successful fetch in this session. */
+  upstreamFresh?: boolean
+  /** An update is available: new upstream commits exist (commit-based when the ref is known, npm comparison otherwise). */
   outdated?: boolean
+  /** Authoritatively up to date: the ref is fresh with no new upstream commits (npm comparison when the ref is unknown). */
   upToDate?: boolean
   unknownVersions?: boolean
   dirty?: string[]
@@ -260,6 +274,41 @@ function describeParts(describe: string): { clean: string; version: string | nul
   const match = /^(.*?)(?:-([0-9]+)-g[0-9a-f]+)?$/i.exec(body)
   const version = match?.[1] !== undefined && match[1].length > 0 ? match[1] : null
   return { clean, version }
+}
+
+/**
+ * Read the local upstream/<branch> ref state — offline (no network): the tip
+ * tag and how many commits HEAD is behind. Resolves to null when the ref
+ * does not exist (remote missing or never fetched); the verdict then falls
+ * back to the npm registry.
+ */
+async function readUpstreamRef(
+  path: string,
+  remote: string,
+  branch: string,
+): Promise<{ version: string | null; ahead: number | null } | null> {
+  const safe = async (args: string[]): Promise<string | null> => {
+    try {
+      return await execGit(path, args)
+    } catch {
+      return null
+    }
+  }
+  const ref = `${remote}/${branch}`
+  const [describe, aheadCount] = await Promise.all([
+    safe(['describe', '--tags', ref]),
+    safe(['rev-list', '--count', `HEAD..${ref}`]),
+  ])
+  if (describe === null && aheadCount === null) return null
+  let ahead: number | null = null
+  if (aheadCount !== null) {
+    const parsed = Number.parseInt(aheadCount, 10)
+    ahead = Number.isNaN(parsed) ? null : parsed
+  }
+  return {
+    version: describe === null ? null : describeParts(describe).version,
+    ahead,
+  }
 }
 
 async function collectStatus(env: Env): Promise<StatusData> {
@@ -324,19 +373,41 @@ async function collectStatus(env: Env): Promise<StatusData> {
     && base.sourceVersion !== null
     && env.runningVersion !== base.sourceVersion
 
-  const latestParsed = env.latestVersion === null ? null : parseVersion(env.latestVersion)
-  const sourceParsed = base.sourceVersion === null ? null : parseVersion(base.sourceVersion)
-  if (latestParsed !== null && sourceParsed !== null) {
-    const cmp = compareVersions(sourceParsed, latestParsed)
-    base.outdated = cmp < 0
-    base.upToDate = cmp >= 0
-    base.unknownVersions = false
+  // Official-latest verdict. The update rebases onto the upstream remote
+  // tip, so that ref is authoritative; the npm registry is a fallback for
+  // installs without a usable upstream ref (the npm release may lag behind
+  // the git repo — a npm-primary verdict would hide real updates).
+  const upstreamRef = await readUpstreamRef(path, env.upstreamRemote, env.upstreamBranch)
+  base.npmVersion = env.latestVersion
+  base.upstreamFresh = env.upstreamFresh
+  if (upstreamRef !== null) {
+    base.upstreamVersion = upstreamRef.version
+    base.upstreamAhead = upstreamRef.ahead
+    if (upstreamRef.ahead === null) {
+      base.outdated = false
+      base.upToDate = false
+      base.unknownVersions = true
+    } else {
+      base.outdated = upstreamRef.ahead > 0
+      base.upToDate = upstreamRef.ahead === 0 && env.upstreamFresh
+      base.unknownVersions = false
+    }
+    base.latestVersion = upstreamRef.version ?? env.latestVersion
   } else {
-    base.outdated = false
-    base.upToDate = false
-    base.unknownVersions = true
+    const latestParsed = env.latestVersion === null ? null : parseVersion(env.latestVersion)
+    const sourceParsed = base.sourceVersion === null ? null : parseVersion(base.sourceVersion)
+    if (latestParsed !== null && sourceParsed !== null) {
+      const cmp = compareVersions(sourceParsed, latestParsed)
+      base.outdated = cmp < 0
+      base.upToDate = cmp >= 0
+      base.unknownVersions = false
+    } else {
+      base.outdated = false
+      base.upToDate = false
+      base.unknownVersions = true
+    }
+    base.latestVersion = env.latestVersion
   }
-  base.latestVersion = env.latestVersion
   base.lastCheckedAt = env.lastCheckedAt
   base.checkError = env.checkError
   base.fetchNote = env.fetchNote
@@ -471,7 +542,10 @@ interface Env {
   patchesBranch: string
   registryBase: string
   registryPackage: string
+  /** npm registry `latest` dist-tag (fallback signal; refreshed by /check). */
   latestVersion: string | null
+  /** True only when the last upstream fetch in this session succeeded. */
+  upstreamFresh: boolean
   lastCheckedAt: number | null
   checkError: string | null
   fetchNote: string | null
@@ -536,6 +610,7 @@ async function runUpdate(env: Env, withInstall: boolean): Promise<OperationResul
   await execGitLogged(env, path, ['fetch', '--tags', env.upstreamRemote, env.upstreamBranch], 180_000)
     .then(code => { fetchCode = code })
     .catch(() => { fetchCode = 1 })
+  env.upstreamFresh = fetchCode === 0
   if (fetchCode !== 0) {
     env.operation.running = false
     env.operation.finishedAt = Date.now()
@@ -842,6 +917,7 @@ export function apply(ctx: Context, config: Config): void {
     registryBase: config.registryBase ?? 'https://registry.npmjs.org',
     registryPackage: config.registryPackage ?? '@deepseek-ai/dsh',
     latestVersion: null,
+    upstreamFresh: false,
     lastCheckedAt: null,
     checkError: null,
     fetchNote: null,
@@ -879,25 +955,26 @@ export function apply(ctx: Context, config: Config): void {
         return
       }
       if (method === 'POST' && path === `${ROUTE_PREFIX}/check`) {
-        // Refresh the official-latest lookup and upstream refs. Cheap enough to
-        // run on demand. A failed npm lookup is a real check failure; a failed
-        // upstream git fetch is only a soft note — version detection (npm
-        // latest vs local describe) still works without it.
+        // Refresh both version signals. The upstream git fetch is
+        // authoritative (the update rebases onto it); the npm registry
+        // lookup is the fallback for installs without a usable upstream ref.
+        // A failed git fetch does not clear the known ref — it marks the
+        // verdict unverified (upstreamFresh=false) and records a note.
         env.lastCheckedAt = Date.now()
         env.checkError = null
         env.fetchNote = null
-        const latest = await fetchLatestVersion(env.registryBase, env.registryPackage)
-        env.latestVersion = latest.version
-        env.checkError = latest.error
         if (install.path !== undefined) {
           try {
             await execGit(install.path, ['fetch', '--tags', env.upstreamRemote, env.upstreamBranch], 90_000)
+            env.upstreamFresh = true
           } catch (error) {
-            if (env.checkError === null) {
-              env.fetchNote = `git fetch: ${error instanceof Error ? error.message : String(error)}`
-            }
+            env.upstreamFresh = false
+            env.fetchNote = `git fetch: ${error instanceof Error ? error.message : String(error)}`
           }
         }
+        const latest = await fetchLatestVersion(env.registryBase, env.registryPackage)
+        env.latestVersion = latest.version
+        env.checkError = latest.error
         sendJson(res, 200, await collectStatus(env))
         return
       }

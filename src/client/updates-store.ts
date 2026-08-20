@@ -25,6 +25,10 @@ export interface VersionStatus {
   runningVersion?: string | null
   needsRestart?: boolean
   latestVersion?: string | null
+  npmVersion?: string | null
+  upstreamVersion?: string | null
+  upstreamAhead?: number | null
+  upstreamFresh?: boolean
   outdated?: boolean
   upToDate?: boolean
   unknownVersions?: boolean

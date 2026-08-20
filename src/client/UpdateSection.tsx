@@ -69,7 +69,12 @@ export function UpdateSection(props: UpdateSectionProps): ReactNode {
   const v = state.version
   const resolved = v?.resolved ?? false
   const outdated = v?.outdated ?? false
+  const upToDate = v?.upToDate === true
   const unknownVersions = v?.unknownVersions ?? false
+  // Upstream ref known with no new commits, but never verified by a
+  // successful fetch in this session: the "up to date" claim is unverified.
+  const unverified = v?.upstreamFresh === false && v?.upstreamAhead === 0
+    && !outdated && !upToDate && !unknownVersions
   const dirty = (v?.dirty ?? []).concat(v?.untracked ?? [])
   const onExpectedBranch = v?.branch === v?.expectedBranch
   // "Inconsistency detected" = the working tree differs from HEAD.
@@ -123,7 +128,11 @@ export function UpdateSection(props: UpdateSectionProps): ReactNode {
             ? t('neverChecked')
             : outdated
               ? <span className={css.badgeOutdated}>{t('outdated')}</span>
-              : <span className={css.badgeOk}>{t('upToDate')}</span>}
+              : upToDate
+                ? <span className={css.badgeOk}>{t('upToDate')}</span>
+                : unverified
+                  ? <span className={css.badgeWarn}>{t('unverified')}</span>
+                  : null}
         </p>
       )}
 
@@ -142,12 +151,17 @@ export function UpdateSection(props: UpdateSectionProps): ReactNode {
         </div>
       )}
 
-      {/* Real check failure (npm lookup failed). */}
+      {/* npm lookup failed: a hard check failure only when the git upstream
+          ref is unavailable (npm is the fallback source then); otherwise a
+          soft note — the git upstream remains authoritative. */}
       {v !== null && resolved && v.checkError !== null && v.checkError !== undefined && (
-        <p className={css.error} role="alert">{t('checkFailed', { error: v.checkError })}</p>
+        v.upstreamRemotePresent === false
+          ? <p className={css.error} role="alert">{t('checkFailed', { error: v.checkError })}</p>
+          : <p className={css.fetchNote} role="status">{t('registryNote', { error: v.checkError })}</p>
       )}
 
-      {/* Soft note: versions detected, only the upstream git fetch failed. */}
+      {/* Soft note: the upstream git fetch failed — the verdict rests on
+          possibly stale local refs. */}
       {v !== null && resolved && v.fetchNote !== null && v.fetchNote !== undefined && (
         <p className={css.fetchNote} role="status">{t('fetchNote', { error: v.fetchNote })}</p>
       )}
@@ -304,6 +318,9 @@ function UpdateConfirmDialog({
     >
       {preview !== null && (
         <div className={css.preview}>
+          {preview.fetchNote !== null && preview.fetchNote !== undefined && (
+            <p className={css.previewWarn}>{t('previewStale', { error: preview.fetchNote })}</p>
+          )}
           {upToDate && <p className={css.ok} role="status">{t('previewUpToDate')}</p>}
           {blocked && <p className={css.error} role="alert">{t('previewBlocked', { message: preview.message ?? '' })}</p>}
           {dirtyPreview && <p className={css.error} role="alert">{t('previewDirty')}</p>}

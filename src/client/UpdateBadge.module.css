@@ -34,6 +34,10 @@
   background: var(--dsw-alias-state-warning-primary, #d29922);
 }
 
+.dotWarn {
+  background: var(--dsw-alias-state-warning-primary, #d29922);
+}
+
 .dotError {
   background: var(--dsw-alias-state-error-primary);
 }

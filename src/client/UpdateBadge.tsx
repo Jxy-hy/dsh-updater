@@ -42,24 +42,36 @@ export function UpdateBadge(props: UpdateBadgeProps): ReactNode {
 
   const v = state.version
   const version = v?.sourceVersion ?? v?.runningVersion ?? '?'
+  // Upstream ref known with no new commits, but never verified by a
+  // successful fetch in this session: the 'up to date' claim is unverified.
+  const unverified = v !== null
+    && v.upstreamFresh === false
+    && v.upstreamAhead === 0
+    && v.outdated !== true
+    && v.upToDate !== true
+    && v.unknownVersions !== true
   const dot = v === null || v.resolved !== true
     ? css.dotUnknown
     : v.outdated === true
       ? css.dotOutdated
       : v.upToDate === true
         ? css.dotOk
-        : v.checkError !== null && v.checkError !== undefined
-          ? css.dotError
-          : css.dotUnknown
+        : unverified
+          ? css.dotWarn
+          : v.checkError !== null && v.checkError !== undefined
+            ? css.dotError
+            : css.dotUnknown
   const title = v === null
     ? t('badgeTitle', { version })
     : v.outdated === true
       ? `${t('badgeTitle', { version })} — ${t('badgeUpdateAvailable')}`
       : v.upToDate === true
         ? `${t('badgeTitle', { version })} — ${t('badgeUpToDate')}`
-        : v.checkError !== null && v.checkError !== undefined
-          ? `${t('badgeTitle', { version })} — ${t('badgeError')}`
-          : `${t('badgeTitle', { version })} — ${t('badgeUnknown')}`
+        : unverified
+          ? `${t('badgeTitle', { version })} — ${t('badgeUnverified')}`
+          : v.checkError !== null && v.checkError !== undefined
+            ? `${t('badgeTitle', { version })} — ${t('badgeError')}`
+            : `${t('badgeTitle', { version })} — ${t('badgeUnknown')}`
 
   return (
     <button
