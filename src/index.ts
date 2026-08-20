@@ -17,6 +17,8 @@
  *   branch carrying the user's own commits) onto it. Conflicts STOP the
  *   rebase and are reported — never auto-resolved, so no user work is lost.
  *   `withInstall: true` additionally runs `pnpm install --frozen-lockfile`.
+ *   Every update always runs `pnpm run build` after the rebase so the
+ *   harness's compiled artifacts match the rebased sources.
  *
  * Safety contract — this plugin must never lose user work or config:
  *  - Only the installation checkout (`installPath`, a git repo) is ever
@@ -256,6 +258,8 @@ interface OperationResult {
   conflictedFiles?: string[]
   message?: string
   install?: { code: number | null; ok: boolean }
+  /** Build step result. */
+  build?: { code: number | null; ok: boolean }
   /** Commit+push specifics. */
   branch?: string
   /** Committed locally but the push to the fork failed. */
@@ -707,6 +711,14 @@ async function runUpdate(env: Env, withInstall: boolean): Promise<OperationResul
     logLine(env, pnpmCode === 0 ? 'dependencies installed' : `pnpm install finished with code ${pnpmCode}`)
   }
 
+  // 6) Build (always — the rebase changed sources; missing lib/ artifacts
+  // prevent the harness from starting, as the user hit after rc.8).
+  env.operation.step = 'pnpm run build'
+  logLine(env, '$ pnpm run build')
+  const buildCode = await runBuild(env, path)
+  const buildResult: OperationResult['build'] = { code: buildCode, ok: buildCode === 0 }
+  logLine(env, buildCode === 0 ? 'build complete' : `pnpm run build finished with code ${buildCode}`)
+
   const done: OperationResult = {
     ok: true,
     from: result.headBefore,
@@ -716,6 +728,7 @@ async function runUpdate(env: Env, withInstall: boolean): Promise<OperationResul
     versionBefore: result.versionBefore,
     versionAfter,
     ...(installResult !== undefined ? { install: installResult } : {}),
+    build: buildResult,
   }
   env.operation.running = false
   env.operation.finishedAt = Date.now()
@@ -853,6 +866,33 @@ function runPnpmInstall(env: Env, path: string): Promise<number> {
       },
     )
     // Stream pnpm's progress incrementally into the operation log.
+    child.stdout?.on('data', (chunk: Buffer) => {
+      for (const line of chunk.toString('utf8').split('\n')) {
+        if (line.trim().length > 0) logLine(env, line.replace(/\r$/, ''))
+      }
+    })
+  })
+}
+
+/** Run `pnpm run build` in the checkout so the harness's compiled artifacts
+ * match the rebased sources. Without this, missing `lib/` outputs (client
+ * bundles, `tsc` emits) prevent the harness from starting after an update.
+ * Same cmd.exe wrapper as `runPnpmInstall` for Windows compatibility. */
+function runBuild(env: Env, path: string): Promise<number> {
+  return new Promise((resolve) => {
+    const args = 'run build'
+    const child = execFile(
+      process.platform === 'win32' ? 'cmd.exe' : 'pnpm',
+      process.platform === 'win32'
+        ? ['/d', '/s', '/c', `pnpm ${args}`]
+        : args.split(' '),
+      { cwd: path, timeout: 600_000, windowsHide: true, maxBuffer: 16 * 1024 * 1024 },
+      (error, stdout, stderr) => {
+        const out = `${stdout}${stdout.length > 0 && stderr.length > 0 ? '\n' : ''}${stderr}`.trim()
+        if (out.length > 0) logLine(env, out)
+        resolve(exitCode(error))
+      },
+    )
     child.stdout?.on('data', (chunk: Buffer) => {
       for (const line of chunk.toString('utf8').split('\n')) {
         if (line.trim().length > 0) logLine(env, line.replace(/\r$/, ''))

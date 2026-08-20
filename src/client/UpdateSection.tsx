@@ -368,6 +368,9 @@ function UpdateResultNotice({ result }: { result: OperationResult }): ReactNode 
         {result.install !== undefined && result.install.ok === false
           ? ` · ${t('updateFailed', { error: `pnpm install (${String(result.install.code)})` })}`
           : ''}
+        {result.build !== undefined && result.build.ok === false
+          ? ` · ${t('buildFailed', { code: String(result.build.code ?? '?') })}`
+          : ''}
         {' · '}{t('restartHint')}
       </p>
     )

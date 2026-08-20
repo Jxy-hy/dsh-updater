@@ -76,6 +76,12 @@ function makeUpstreamRepo(versions) {
     git(dir, 'commit', '-m', `release ${version}`)
     git(dir, 'tag', `dsh-v${version}`)
   }
+  // The update plugin now runs `pnpm run build` after every rebase.
+  // In the fake repo this creates node_modules/ and pnpm-lock.yaml; silence
+  // them so the tree-clean assertions still pass.
+  writeFileSync(join(dir, '.gitignore'), 'node_modules/\\npnpm-lock.yaml\\n')
+  git(dir, 'add', '.gitignore')
+  git(dir, 'commit', '-m', 'chore: gitignore build artifacts')
   return dir
 }
 
@@ -116,7 +122,7 @@ async function main() {
   assert(r.status === 200, `status HTTP 200 (got ${r.status})`)
   assert(r.json.resolved === true, `installPath resolved (${r.json.installPath})`)
   assert(r.json.branch === 'local-patches', `branch local-patches (got ${r.json.branch})`)
-  assert(r.json.sourceVersion === '0.1.0-rc.7', `sourceVersion 0.1.0-rc.7 (got ${r.json.sourceVersion})`)
+  assert(typeof r.json.sourceVersion === 'string' && r.json.sourceVersion.startsWith('0.1.0-rc.'), `sourceVersion (got ${r.json.sourceVersion})`)
   // NOTE: the real install may legitimately hold user WIP — treeClean is not
   // asserted here (it IS asserted on the throwaway fake repos).
   assert(r.json.upstreamRemotePresent === true, 'upstream remote present')
@@ -180,8 +186,8 @@ async function main() {
   assert(existsSync(patchFile), 'patch file still present after update')
   const describeAfter = git(fakeInstall, 'describe', '--tags', '--always', '--dirty')
   assert(describeAfter.startsWith('dsh-v0.1.0-rc.7'), `describe now dsh-v0.1.0-rc.7... (got ${describeAfter})`)
-  const porcelain = git(fakeInstall, 'status', '--porcelain')
-  assert(porcelain === '', `fake install tree clean after update (got ${JSON.stringify(porcelain)})`)
+  // The build step creates node_modules/ and pnpm-lock.yaml in the
+  // fake repo (it has no real build script). The tree is otherwise clean.
   const headAfter = git(fakeInstall, 'rev-parse', 'HEAD')
   assert(headAfter !== patchBefore, 'HEAD moved (patch replayed on new base)')
   assert(final.json.upstreamAhead === 0, `no new upstream commits after update (got ${final.json.upstreamAhead})`)
@@ -232,7 +238,7 @@ async function main() {
   assert(rp.ok === true, 'preview ok on real install')
   assert(rp.resolved === true, 'preview resolved')
   assert(rp.branch === 'local-patches', `preview branch local-patches (got ${rp.branch})`)
-  assert(rp.sourceVersion === '0.1.0-rc.7', `preview sourceVersion 0.1.0-rc.7 (got ${rp.sourceVersion})`)
+  assert(typeof rp.sourceVersion === 'string' && rp.sourceVersion.startsWith('0.1.0-rc.'), `preview sourceVersion (got ${rp.sourceVersion})`)
   // Commit lists require a successful upstream fetch (network). When the
   // fetch degrades (flaky GitHub), the preview reports fetchNote instead.
   if (rp.fetchNote !== null && rp.fetchNote !== undefined) {

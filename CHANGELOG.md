@@ -1,5 +1,19 @@
 # Changelog
 
+## [0.1.2] — 2026-08-20
+
+### Fixed
+
+- **更新后自动构建 (Mandatory build after update).** 更新流程现在总是在 rebase 之后运行 `pnpm run build`，确保 `lib/` 下的编译产物与 rebase 后的源码一致。之前更新只 rebase 源码而不重新构建，导致重启后 harness 因缺失编译产物（如 `typert.host.js`、client bundles）无法启动。
+  
+  Every update now runs `pnpm run build` after the rebase, so the compiled artifacts under `lib/` match the rebased sources. Previously the update only rebased the source without rebuilding, which left the harness unable to start after a restart (missing `typert.host.js` and client bundles).
+
+- **构建失败可见 (Build failures are surfaced).** 更新结果现在携带 `build` 字段；构建失败会在结果通知中显示（含退出码）。
+
+  The update result now carries a `build` field; a failed build is shown in the result notice (with the exit code).
+
+---
+
 ## [0.1.1] — 2026-08-20
 
 ### Fixed

@@ -66,6 +66,8 @@ export interface OperationResult {
   versionAfter?: string | null
   message?: string
   install?: { code: number | null; ok: boolean }
+  /** Build step result. */
+  build?: { code: number | null; ok: boolean }
   /** Commit+push specifics. */
   branch?: string
   /** Committed locally but the push to the fork failed. */
