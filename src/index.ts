@@ -148,6 +148,39 @@ class GitError extends Error {
   }
 }
 
+/** Attempts for `git fetch --tags` (GitHub is flaky on some networks). */
+const GIT_FETCH_ATTEMPTS = 3
+/** Delay between fetch attempts, in ms. */
+const GIT_FETCH_RETRY_DELAY_MS = 5_000
+
+function sleep(ms: number): Promise<void> {
+  return new Promise(resolve => setTimeout(resolve, ms))
+}
+
+/**
+ * Run `git fetch --tags <remote> <branch>` with a bounded retry. A single
+ * network hiccup must not keep the version verdict stale for the whole
+ * staleness window; the first successful attempt wins.
+ */
+async function fetchUpstream(
+  path: string,
+  remote: string,
+  branch: string,
+  timeoutMs: number,
+): Promise<{ ok: boolean; error: string | null }> {
+  let lastError: string | null = null
+  for (let attempt = 1; attempt <= GIT_FETCH_ATTEMPTS; attempt++) {
+    try {
+      await execGit(path, ['fetch', '--tags', remote, branch], timeoutMs)
+      return { ok: true, error: null }
+    } catch (error) {
+      lastError = error instanceof Error ? error.message : String(error)
+      if (attempt < GIT_FETCH_ATTEMPTS) await sleep(GIT_FETCH_RETRY_DELAY_MS)
+    }
+  }
+  return { ok: false, error: lastError }
+}
+
 function isInstallRoot(dir: string): boolean {
   return existsSync(join(dir, 'pnpm-workspace.yaml'))
     && existsSync(join(dir, 'apps', 'cli', 'src', 'bin.ts'))
@@ -493,14 +526,10 @@ async function runPreview(env: Env): Promise<PreviewResult> {
   base.untracked = untracked
   base.treeClean = dirty.length === 0 && untracked.length === 0
 
-  // Refresh the upstream refs (best-effort) so the comparison is current.
-  let fetchOk = false
-  try {
-    await execGit(path, ['fetch', '--tags', env.upstreamRemote, env.upstreamBranch], 90_000)
-    fetchOk = true
-  } catch (error) {
-    base.fetchNote = `git fetch: ${error instanceof Error ? error.message : String(error)}`
-  }
+  // Refresh the upstream refs (best-effort, retried) so the comparison is current.
+  const fetched = await fetchUpstream(path, env.upstreamRemote, env.upstreamBranch, 60_000)
+  if (!fetched.ok) base.fetchNote = `git fetch: ${fetched.error}`
+  const fetchOk = fetched.ok
 
   const describeInfo = await safe(['describe', '--tags', '--always', '--dirty'])
   base.sourceVersion = describeInfo === null ? null : describeParts(describeInfo).version
@@ -607,18 +636,26 @@ async function runUpdate(env: Env, withInstall: boolean): Promise<OperationResul
     return result
   }
 
-  // 1) Refresh the upstream remote-tracking refs + tags.
+  // 1) Refresh the upstream remote-tracking refs + tags. Retried: one failed
+  // attempt on a flaky network must not abort the whole update.
   env.operation = { running: true, step: 'git fetch', log: [], startedAt: Date.now() }
-  logLine(env, `$ git fetch --tags ${env.upstreamRemote} ${env.upstreamBranch}`)
   let fetchCode: number | null = null
-  await execGitLogged(env, path, ['fetch', '--tags', env.upstreamRemote, env.upstreamBranch], 180_000)
-    .then(code => { fetchCode = code })
-    .catch(() => { fetchCode = 1 })
+  for (let attempt = 1; attempt <= GIT_FETCH_ATTEMPTS; attempt++) {
+    logLine(env, `$ git fetch --tags ${env.upstreamRemote} ${env.upstreamBranch}${attempt > 1 ? ` (attempt ${attempt}/${GIT_FETCH_ATTEMPTS})` : ''}`)
+    await execGitLogged(env, path, ['fetch', '--tags', env.upstreamRemote, env.upstreamBranch], 120_000)
+      .then(code => { fetchCode = code })
+      .catch(() => { fetchCode = 1 })
+    if (fetchCode === 0) break
+    if (attempt < GIT_FETCH_ATTEMPTS) {
+      logLine(env, `fetch failed — retrying in ${GIT_FETCH_RETRY_DELAY_MS / 1000}s`)
+      await sleep(GIT_FETCH_RETRY_DELAY_MS)
+    }
+  }
   env.upstreamFresh = fetchCode === 0
   if (fetchCode !== 0) {
     env.operation.running = false
     env.operation.finishedAt = Date.now()
-    env.operation.result = { ok: false, message: `git fetch failed (code ${fetchCode}) — network or remote error, nothing was changed` }
+    env.operation.result = { ok: false, message: `git fetch failed after ${GIT_FETCH_ATTEMPTS} attempts (code ${fetchCode}) — network or remote error, nothing was changed` }
     env.lastUpdateResult = env.operation.result
     return env.lastUpdateResult
   }
@@ -1004,13 +1041,9 @@ export function apply(ctx: Context, config: Config): void {
         env.checkError = null
         env.fetchNote = null
         if (install.path !== undefined) {
-          try {
-            await execGit(install.path, ['fetch', '--tags', env.upstreamRemote, env.upstreamBranch], 90_000)
-            env.upstreamFresh = true
-          } catch (error) {
-            env.upstreamFresh = false
-            env.fetchNote = `git fetch: ${error instanceof Error ? error.message : String(error)}`
-          }
+          const fetched = await fetchUpstream(install.path, env.upstreamRemote, env.upstreamBranch, 60_000)
+          env.upstreamFresh = fetched.ok
+          if (!fetched.ok) env.fetchNote = `git fetch: ${fetched.error}`
         }
         const latest = await fetchLatestVersion(env.registryBase, env.registryPackage)
         env.latestVersion = latest.version

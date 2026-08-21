@@ -98,7 +98,7 @@ export interface PreviewResult {
 }
 
 /** How stale a version check may be before an automatic re-check. */
-const AUTO_CHECK_STALE_MS = 12 * 60 * 60 * 1000
+const AUTO_CHECK_STALE_MS = 30 * 60 * 1000
 /** Periodic automatic re-check interval. */
 const AUTO_CHECK_INTERVAL_MS = 30 * 60 * 1000
 
@@ -160,8 +160,8 @@ const ROUTE = '/__dsh-update'
 
 export class UpdatesController {
   readonly hooks: SnapshotStore<UpdateState>
-  /** Guards so the auto-check never fires more than once per run. */
-  private autoChecked = false
+  /** Epoch ms of the last automatic re-check; rate-limits the periodic tick. */
+  private lastAutoCheckAt = 0
   /** Whether the last completed check reported outdated (toast once). */
   private wasOutdated = false
 
@@ -206,20 +206,20 @@ export class UpdatesController {
 
   /**
    * Run one network check when the cached result is stale and no check is
-   * already in flight. Never spams: the callers guard by staleness and this
-   * method by `autoChecked` + `checking`.
+   * already in flight. Never spams: callers guard by staleness, the periodic
+   * tick by `lastAutoCheckAt`, and `check()` by `checking`.
    */
   private async maybeAutoCheck(): Promise<void> {
-    if (this.autoChecked) return
     const status = this.hooks.getSnapshot().version
     if (status === null || status.lastCheckedAt === null || status.lastCheckedAt === undefined) return
     if (Date.now() - status.lastCheckedAt <= AUTO_CHECK_STALE_MS) return
-    this.autoChecked = true
-    await this.check()
+    if (Date.now() - this.lastAutoCheckAt < AUTO_CHECK_INTERVAL_MS) return
+    this.lastAutoCheckAt = Date.now()
+    await this.check(true)
   }
 
   /** Force a fresh version check (npm latest + upstream fetch) on the host. */
-  async check(): Promise<void> {
+  async check(silent = false): Promise<void> {
     const snapshot = this.hooks.getSnapshot()
     if (snapshot.checking) return
     this.patch({ checking: true, updateError: null })
@@ -240,7 +240,9 @@ export class UpdatesController {
     } catch (error) {
       this.patch({
         checking: false,
-        updateError: error instanceof Error ? error.message : String(error),
+        // A failed background auto-check is not a user-action error; the host
+        // fetchNote on the status line already explains the stale verdict.
+        updateError: silent ? null : (error instanceof Error ? error.message : String(error)),
       })
     }
   }

@@ -4,7 +4,7 @@ A DeepSeek Harness web plugin that checks the local DSH version against the offi
 
 - **Settings page ("Updates")** — source / running / latest version, outdated badge, branch + working-tree guards, check button, update buttons, live operation log, and an update confirmation dialog with a **dry-run preview** (from→to versions plus the exact commits that would be added and the local commits that would be kept).
 - **Sidebar footer badge** — a compact version pill (green = verified up to date, amber = update available or unverified, red = check error); click to refresh.
-- **Auto-check + toast** — when the cached version check is stale (12h) the page auto re-checks; a newly-detected update raises a transient toast.
+- **Auto-check + toast** — when the cached version check is stale (30 min) the page auto re-checks, so version data can never be older than about 30 minutes while the page is open; a newly-detected update raises a transient toast.
 - **One-click commit & push to your fork** — when the working tree has uncommitted changes the button enables: it stages everything, commits on the current branch (`local: working tree sync (dsh-updater …)`), and pushes to `origin` (your fork). A commit that fails to push is reported as `partial` — your work is committed locally, only the network hop failed.
 - **Honest diagnostics** — the official latest comes from the git upstream tag (the npm registry is a fallback, since it may lag behind the git repo); a failed upstream fetch marks the verdict unverified — never shows a false green "up to date" on stale data. A failed npm lookup is only a hard error when the upstream ref is absent.
 - Host HTTP surface `GET /__dsh-update/status|info`,

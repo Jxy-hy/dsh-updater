@@ -1,5 +1,25 @@
 # Changelog
 
+## [0.1.3] — 2026-08-21
+
+### Fixed
+
+- **fetch 自动重试 (Fetch retries).** `/check`、`/preview`、`/update` 中的 `git fetch --tags` 现在自动重试 3 次（间隔 5 秒）。之前单次网络抖动（如 SSL 连接被重置）就会让整次检查失败，页面持续显示过期的版本信息。
+  
+  The `git fetch --tags` in `/check`, `/preview` and `/update` now retries automatically (3 attempts, 5 s apart). A single network hiccup (e.g. an SSL connection reset) no longer poisons the whole check and leaves the page showing a stale version.
+
+- **自动重查真正生效 (The auto re-check actually works now).** 客户端自动检查的陈旧阈值从 12 小时缩短到 30 分钟，并把「每个会话只自动检查一次」的守卫改为 30 分钟限频——页面保持打开时版本数据不会陈旧超过约 30 分钟，上游发布新版本后页面会自动发现，无需手动点击。
+  
+  The client auto-check staleness threshold drops from 12 h to 30 min, and the "auto-check once per session" guard becomes a 30-min rate limit — while the page stays open, version data can never be older than about 30 minutes, so a new upstream release surfaces on its own without a manual click.
+
+### Added
+
+- **数据陈旧提示 (Staleness hints).** 「上次检查」现在附带相对时间（如「5 分钟前」）；缓存超过 30 分钟时时间戳变为琥珀色，并出现软提示引导点击「检查更新」。
+  
+  "Last checked" now shows a relative age (e.g. "5 min ago"); when the cache is older than 30 minutes the timestamp turns amber and a soft note prompts a re-check.
+
+---
+
 ## [0.1.2] — 2026-08-20
 
 ### Fixed

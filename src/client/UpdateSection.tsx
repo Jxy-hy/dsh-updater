@@ -52,6 +52,17 @@ function formatTime(epochMs: number | undefined | null): string {
   return new Date(epochMs).toLocaleString()
 }
 
+/** Relative age of a timestamp in the active language ("5 min ago"). */
+function formatAge(epochMs: number | undefined | null): string {
+  if (epochMs === undefined || epochMs === null || Number.isNaN(epochMs)) return ''
+  const minutes = Math.floor((Date.now() - epochMs) / 60_000)
+  if (minutes < 1) return t('justNow')
+  if (minutes < 60) return t('minutesAgo', { n: minutes })
+  const hours = Math.floor(minutes / 60)
+  if (hours < 24) return t('hoursAgo', { n: hours })
+  return t('daysAgo', { n: Math.floor(hours / 24) })
+}
+
 /** Version cell with a fallback for unknown. */
 function versionText(value: string | null | undefined): string {
   return value !== null && value !== undefined && value.length > 0 ? value : t('unknown')
@@ -75,6 +86,9 @@ export function UpdateSection(props: UpdateSectionProps): ReactNode {
   // successful fetch in this session: the "up to date" claim is unverified.
   const unverified = v?.upstreamFresh === false && v?.upstreamAhead === 0
     && !outdated && !upToDate && !unknownVersions
+  // The cached verdict is older than one auto-check window — nudge a re-check.
+  const lastCheckedAt = v?.lastCheckedAt ?? null
+  const checkStale = lastCheckedAt !== null && Date.now() - lastCheckedAt > 30 * 60 * 1000
   const dirty = (v?.dirty ?? []).concat(v?.untracked ?? [])
   const onExpectedBranch = v?.branch === v?.expectedBranch
   // "Inconsistency detected" = the working tree differs from HEAD.
@@ -147,7 +161,11 @@ export function UpdateSection(props: UpdateSectionProps): ReactNode {
           </span>
           <span>{v.treeClean === true ? t('treeClean') : t('dirtyTree', { files: dirty.slice(0, 4).join(', ') })}</span>
           {v.upstreamRemotePresent === false && <span className={css.errorInline}>{t('noUpstream')}</span>}
-          <span>{t('updatedAt', { time: formatTime(v.lastCheckedAt) })}</span>
+          <span>
+            {lastCheckedAt === null
+              ? t('neverChecked')
+              : <span className={checkStale ? css.stale : undefined}>{t('updatedAt', { time: formatTime(lastCheckedAt), age: formatAge(lastCheckedAt) })}</span>}
+          </span>
         </div>
       )}
 
@@ -164,6 +182,11 @@ export function UpdateSection(props: UpdateSectionProps): ReactNode {
           possibly stale local refs. */}
       {v !== null && resolved && v.fetchNote !== null && v.fetchNote !== undefined && (
         <p className={css.fetchNote} role="status">{t('fetchNote', { error: v.fetchNote })}</p>
+      )}
+
+      {/* Soft note: the cached verdict is old — a re-check is warranted. */}
+      {v !== null && resolved && checkStale && !state.checking && (
+        <p className={css.fetchNote} role="status">{t('staleData')}</p>
       )}
 
       {/* Enhanced dirty-tree guidance: the update button is disabled and the

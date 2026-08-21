@@ -111,6 +111,11 @@
   color: var(--dsw-alias-label-tertiary);
 }
 
+/* Last-check span when the cached verdict is older than one auto-check window. */
+.stale {
+  color: var(--dsw-alias-state-warning-primary, #d29922);
+}
+
 .code {
   font-family: var(--dsw-font-mono, ui-monospace, SFMono-Regular, Menlo, monospace);
   font-size: 12px;
